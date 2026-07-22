@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-title" content="Family Finance" />
 <link rel="manifest" href="manifest.webmanifest" />
 <link rel="apple-touch-icon" href="icons/icon-192.png" />
-<title>Family Finance — Final</title>
+<title>Family Finance — Phase 1</title>
 <style>
 :root{
   --bg:#f4f7fb; --panel:#ffffff; --text:#172033; --muted:#6f7b91;
@@ -97,7 +97,7 @@ input:focus,select:focus{outline:2px solid #dbe3ff;border-color:#9eb1ff}
       <input id="pinConfirm" type="password" autocomplete="new-password" placeholder="Re-enter access code" />
     </div>
     <button class="btn" style="width:100%;margin-top:16px" onclick="handleUnlock()">Continue</button>
-    <button class="btn ghost" style="width:100%;margin-top:9px" onclick="restoreVaultFromDriveBeforeUnlock()">Restore from Google Drive</button>
+    <label class="btn ghost" style="width:100%;margin-top:9px;display:block;text-align:center">Restore Encrypted Backup<input id="lockRestoreFile" type="file" accept=".json,.ffbackup" style="display:none" onchange="restoreEncryptedBackup(event)" /></label>
     <div id="lockError" class="small" style="color:var(--bad);margin-top:10px"></div>
     <div class="privacy-note">
       This app does not send your financial data to a server. Keep a backup from Settings. Losing the access code means the encrypted data cannot be recovered.
@@ -108,7 +108,7 @@ input:focus,select:focus{outline:2px solid #dbe3ff;border-color:#9eb1ff}
 <div id="appRoot" class="app hidden">
   <aside class="sidebar">
     <div class="brand">Family Finance
-      <small>Private • Synced • Encrypted</small>
+      <small>Private • Local-first • Encrypted</small>
     </div>
     <div class="nav">
       <button class="active" data-section="dashboard">Dashboard</button>
@@ -132,6 +132,7 @@ input:focus,select:focus{outline:2px solid #dbe3ff;border-color:#9eb1ff}
       <div class="topbar">
         <div><h1>Dashboard</h1><div class="sub" id="dashboardMonth"></div></div>
         <div class="actions">
+          <input id="dashboardMonthPicker" type="month" style="width:auto" onchange="renderAll()" aria-label="Dashboard month" />
           <button class="btn secondary" onclick="openCreateModal('transactions')">+ Transaction</button>
           <button class="btn" onclick="openCreateModal('accounts')">+ Account</button>
         </div>
@@ -175,6 +176,11 @@ input:focus,select:focus{outline:2px solid #dbe3ff;border-color:#9eb1ff}
         <div class="card span-6">
           <h3>Monthly Spending Trend</h3>
           <div id="spendingChart" class="chart-bars"></div>
+        </div>
+
+        <div class="card span-6">
+          <h3>Spending by Category</h3>
+          <div id="monthlyCategoryBreakdown"></div>
         </div>
 
         <div class="card span-6">
@@ -225,19 +231,26 @@ input:focus,select:focus{outline:2px solid #dbe3ff;border-color:#9eb1ff}
     </section>
 
     <section id="import" class="section">
-      <div class="topbar"><div><h1>Import Bank Statements</h1><div class="sub">Start with CSV files exported from your bank or credit-card portal.</div></div></div>
+      <div class="topbar"><div><h1>Import Statements</h1><div class="sub">Analyze CSV or text-based PDF bank statements locally before anything is added.</div></div></div>
       <div class="card">
-        <div class="notice">Version 1 uses automatic column detection for common fields such as Date, Description, Amount, Debit, and Credit. Review imported transactions after upload.</div>
+        <div class="notice"><strong>Recommended:</strong> CSV gives the most accurate results. Text-based PDFs are supported on a best-effort basis. Scanned/image-only PDFs cannot be reliably read in this version.</div>
         <div class="file-box">
-          <h3>Upload CSV Statement</h3>
-          <input type="file" id="csvFile" accept=".csv,text/csv" />
+          <h3>1. Select a Statement</h3>
+          <input type="file" id="statementFile" accept=".csv,.pdf,text/csv,application/pdf" />
           <div class="form-grid" style="margin-top:14px;text-align:left">
             <div><label>Import into account</label><select id="importAccount"></select></div>
             <div><label>Default currency</label><select id="importCurrency"><option>USD</option><option>INR</option></select></div>
+            <div><label>Amount sign convention</label><select id="importSign"><option value="auto">Auto / negative means spending</option><option value="positiveOut">Positive means spending (some credit cards)</option><option value="positiveIn">Positive means money in</option></select></div>
+            <div><label>Account balance</label><select id="importAdjustBalance"><option value="no">Do not change account balance</option><option value="yes">Adjust balance using imported transactions</option></select></div>
           </div>
-          <button class="btn" style="margin-top:14px" onclick="importCSV()">Import CSV</button>
+          <button class="btn" style="margin-top:14px" onclick="analyzeStatement()">Analyze Statement</button>
           <div id="importStatus" class="small muted" style="margin-top:10px"></div>
         </div>
+      </div>
+      <div id="importReviewCard" class="card" style="margin-top:16px;display:none">
+        <div class="split"><div><h3 style="margin-bottom:4px">2. Review Detected Transactions</h3><div id="importSummary" class="small muted"></div></div><button class="btn" onclick="approveImport()">Approve Selected</button></div>
+        <p class="small muted">High-confidence items are preselected. Low-confidence items stay selected for review but are clearly flagged. Change Type, Category, or Bucket before approving.</p>
+        <div id="importReviewTable" style="overflow:auto"></div>
       </div>
     </section>
 
@@ -250,33 +263,19 @@ input:focus,select:focus{outline:2px solid #dbe3ff;border-color:#9eb1ff}
             <div><label>Base currency</label><select id="baseCurrency" onchange="saveSettings()"><option>USD</option><option>INR</option></select></div>
             <div><label>USD → INR rate</label><input id="usdInr" type="number" step="0.01" onchange="saveSettings()" /></div>
           </div>
-          <p class="small muted">Enter the conversion rate you want to use for reporting. Live FX integration can be added when this becomes a connected app.</p>
+          <p class="small muted">Enter the conversion rate you want to use for reporting.</p>
         </div>
         <div class="card span-6">
-          <h3>Backup & Restore</h3>
+          <h3>Encrypted Backup & Restore</h3>
           <div class="actions">
-            <button class="btn secondary" onclick="exportBackup()">Export Backup</button>
-            <label class="btn ghost" style="display:inline-flex;align-items:center">Restore Backup<input id="restoreFile" type="file" accept=".json" style="display:none" onchange="restoreBackup(event)" /></label>
+            <button class="btn secondary" onclick="exportBackup()">Export Encrypted Backup</button>
+            <label class="btn ghost" style="display:inline-flex;align-items:center">Restore Backup<input id="restoreFile" type="file" accept=".json,.ffbackup" style="display:none" onchange="restoreEncryptedBackup(event)" /></label>
           </div>
-          <p class="small muted">Backups contain your finance data. Store them in a private location.</p>
+          <p class="small muted">The backup contains only encrypted vault data plus the encryption salt. Keep the access code separately.</p>
         </div>
         <div class="card span-12">
-          <div class="split"><h3>Google Drive Sync</h3><span class="badge" id="driveBadge">Not connected</span></div>
-          <p class="muted">Syncs only the encrypted vault file created by this app. The app does not request access to all of your Drive files.</p>
-          <div class="actions">
-            <button class="btn" onclick="connectGoogleDrive()">Connect Google Drive</button>
-            <button class="btn secondary" onclick="syncVaultToDrive()">Sync to Drive</button>
-            <button class="btn ghost" onclick="syncVaultFromDrive()">Pull from Drive</button>
-          </div>
-          <div class="form-grid" style="margin-top:14px">
-            <div><label>Share encrypted vault with spouse</label><input id="shareEmail" type="email" placeholder="spouse@gmail.com" /></div>
-            <div style="display:flex;align-items:end"><button class="btn ghost" style="width:100%" onclick="shareVaultWithSpouse()">Share Vault</button></div>
-          </div>
-          <div id="driveStatus" class="small muted" style="margin-top:12px">Google Drive is optional. Local use continues to work without it.</div>
-        </div>
-        <div class="card span-12">
-          <h3>Privacy</h3>
-          <p class="muted">Your data is encrypted with a key derived from your access code, stored locally in this browser, and optionally synchronized as an encrypted vault in Google Drive. The app automatically locks after 10 minutes of inactivity.</p>
+          <h3>Privacy & Local Storage</h3>
+          <p class="muted">Your finance data is encrypted with AES-GCM using a key derived from your access code and stored in this browser's IndexedDB. Statement analysis runs in your browser. Google Drive is not required. The app automatically locks after 10 minutes of inactivity.</p>
         </div>
       </div>
     </section>
@@ -380,8 +379,13 @@ input:focus,select:focus{outline:2px solid #dbe3ff;border-color:#9eb1ff}
 
 <script>
 const STORAGE_META='fft_meta_v1';
-const STORAGE_DATA='fft_data_v1';
+const LEGACY_STORAGE_DATA='fft_data_v1';
+const DB_NAME='family_finance_phase1';
+const DB_STORE='vault';
+const DB_KEY='encrypted_state';
 let state=null, cryptoKey=null, inactivityTimer=null;
+let importCandidates=[];
+let importSourceName='';
 const editingIds={transactions:null,accounts:null,budgets:null,investments:null,debts:null,goals:null,recurring:null};
 
 const defaultCategories = [
@@ -395,7 +399,7 @@ const defaultCategories = [
 function newState(){
  return {
   settings:{baseCurrency:'USD',usdInr:83.0},
-  accounts:[],transactions:[],budgets:[],investments:[],debts:[],goals:[],recurring:[],
+  accounts:[],transactions:[],budgets:[],investments:[],debts:[],goals:[],recurring:[],rules:[],importHistory:[],
   categories:[...defaultCategories]
  };
 }
@@ -411,18 +415,38 @@ async function deriveKey(pin,salt){
 }
 function b64(bytes){return btoa(String.fromCharCode(...new Uint8Array(bytes)))}
 function unb64(s){return Uint8Array.from(atob(s),c=>c.charCodeAt(0))}
+function openVaultDB(){
+ return new Promise((resolve,reject)=>{
+  const req=indexedDB.open(DB_NAME,1);
+  req.onupgradeneeded=()=>{const db=req.result;if(!db.objectStoreNames.contains(DB_STORE))db.createObjectStore(DB_STORE)};
+  req.onsuccess=()=>resolve(req.result); req.onerror=()=>reject(req.error);
+ });
+}
+async function idbGet(key){const db=await openVaultDB();return new Promise((resolve,reject)=>{const tx=db.transaction(DB_STORE,'readonly');const r=tx.objectStore(DB_STORE).get(key);r.onsuccess=()=>resolve(r.result||null);r.onerror=()=>reject(r.error)})}
+async function idbSet(key,value){const db=await openVaultDB();return new Promise((resolve,reject)=>{const tx=db.transaction(DB_STORE,'readwrite');tx.objectStore(DB_STORE).put(value,key);tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error)})}
 async function encryptState(){
  if(!cryptoKey||!state)return;
  const iv=crypto.getRandomValues(new Uint8Array(12));
  const bytes=new TextEncoder().encode(JSON.stringify(state));
  const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},cryptoKey,bytes);
- localStorage.setItem(STORAGE_DATA,JSON.stringify({iv:b64(iv),ct:b64(ct)}));
+ await idbSet(DB_KEY,{iv:b64(iv),ct:b64(ct),updatedAt:new Date().toISOString()});
 }
 async function decryptState(key){
- const raw=JSON.parse(localStorage.getItem(STORAGE_DATA));
+ let raw=await idbGet(DB_KEY);
+ if(!raw){
+  const legacy=localStorage.getItem(LEGACY_STORAGE_DATA);
+  if(legacy){raw=JSON.parse(legacy);await idbSet(DB_KEY,raw);localStorage.removeItem(LEGACY_STORAGE_DATA)}
+ }
  if(!raw)return newState();
  const pt=await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(raw.iv)},key,unb64(raw.ct));
  return JSON.parse(new TextDecoder().decode(pt));
+}
+function upgradeStateShape(){
+ state.settings=state.settings||{baseCurrency:'USD',usdInr:83};
+ state.rules=Array.isArray(state.rules)?state.rules:[];
+ state.importHistory=Array.isArray(state.importHistory)?state.importHistory:[];
+ state.categories=Array.isArray(state.categories)&&state.categories.length?state.categories:[...defaultCategories];
+ ['accounts','transactions','budgets','investments','debts','goals','recurring'].forEach(k=>state[k]=Array.isArray(state[k])?state[k]:[]);
 }
 async function handleUnlock(){
  const pin=document.getElementById('pinInput').value;
@@ -442,6 +466,7 @@ async function handleUnlock(){
    cryptoKey=await deriveKey(pin,unb64(meta.salt));
    state=await decryptState(cryptoKey);
   }
+  upgradeStateShape();
   document.getElementById('lockScreen').classList.add('hidden');
   document.getElementById('appRoot').classList.remove('hidden');
   document.getElementById('pinInput').value=''; document.getElementById('pinConfirm').value='';
@@ -466,7 +491,7 @@ function resetInactivity(){
 
 function initUI(){
  document.getElementById('txDate').value=today();
- document.getElementById('dashboardMonth').textContent=new Date().toLocaleDateString(undefined,{month:'long',year:'numeric'});
+ document.getElementById('dashboardMonthPicker').value=monthKey(today());
  document.getElementById('baseCurrency').value=state.settings.baseCurrency||'USD';
  document.getElementById('usdInr').value=state.settings.usdInr||83;
  populateSelects(); renderAll();
@@ -557,12 +582,13 @@ function deleteItem(list,id){
  saveAndRender();
 }
 function reverseTransactionFromBalances(t){
+ if(t.affectsBalance===false)return;
  const a=state.accounts.find(x=>x.id===t.accountId); if(!a)return;
  const amtInAccountCurrency=convertBetween(t.amount,t.currency,a.currency);
  if(t.type==='Income')a.balance-=amtInAccountCurrency;
  if(t.type==='Expense'||t.type==='Investment / Savings')a.balance+=amtInAccountCurrency;
  if(t.type==='Transfer'){
-   a.balance+=amtInAccountCurrency;
+   if(t.direction==='inflow')a.balance-=amtInAccountCurrency; else a.balance+=amtInAccountCurrency;
    const b=state.accounts.find(x=>x.id===t.toAccountId);
    if(b)b.balance-=convertBetween(t.amount,t.currency,b.currency);
  }
@@ -585,7 +611,7 @@ function saveTransaction(){
  const type=txType.value, amount=Number(txAmount.value||0), accountId=txAccount.value;
  if(!amount||!accountId)return alert('Choose an account and enter an amount.');
  if(type==='Transfer' && (!txToAccount.value||txToAccount.value===accountId))return alert('Choose a different destination account.');
- const record={id:editingIds.transactions||uid(),type,date:txDate.value||today(),accountId,toAccountId:type==='Transfer'?(txToAccount.value||''):'',amount,currency:txCurrency.value,category:txCategory.value||'Miscellaneous',bucket:type==='Transfer'?'Excluded':txBucket.value,description:txDesc.value.trim()};
+ const oldRecord=state.transactions.find(x=>x.id===editingIds.transactions); const record={id:editingIds.transactions||uid(),type,date:txDate.value||today(),accountId,toAccountId:type==='Transfer'?(txToAccount.value||''):'',amount,currency:txCurrency.value,category:txCategory.value||'Miscellaneous',bucket:type==='Transfer'?'Excluded':txBucket.value,description:txDesc.value.trim(),direction:type==='Income'?'inflow':'outflow',affectsBalance:oldRecord?.affectsBalance!==false};
  const idx=state.transactions.findIndex(x=>x.id===editingIds.transactions);
  if(idx>=0){
   reverseTransactionFromBalances(state.transactions[idx]);
@@ -595,12 +621,13 @@ function saveTransaction(){
  editingIds.transactions=null; closeModal('transactionModal'); saveAndRender();
 }
 function applyTransactionToBalances(t){
+ if(t.affectsBalance===false)return;
  const a=state.accounts.find(x=>x.id===t.accountId); if(!a)return;
  const amtInAccountCurrency=convertBetween(t.amount,t.currency,a.currency);
  if(t.type==='Income')a.balance+=amtInAccountCurrency;
  if(t.type==='Expense'||t.type==='Investment / Savings')a.balance-=amtInAccountCurrency;
  if(t.type==='Transfer'){
-   a.balance-=amtInAccountCurrency;
+   if(t.direction==='inflow')a.balance+=amtInAccountCurrency; else a.balance-=amtInAccountCurrency;
    const b=state.accounts.find(x=>x.id===t.toAccountId);
    if(b)b.balance+=convertBetween(t.amount,t.currency,b.currency);
  }
@@ -650,7 +677,10 @@ function renderAll(){
 }
 
 function renderDashboard(){
- const mk=monthKey(today()), tx=state.transactions.filter(t=>monthKey(t.date)===mk);
+ const picker=document.getElementById('dashboardMonthPicker'); const mk=picker?.value||monthKey(today());
+ const monthDate=new Date(mk+'-01T12:00:00');
+ setText('dashboardMonth',monthDate.toLocaleDateString(undefined,{month:'long',year:'numeric'}));
+ const tx=state.transactions.filter(t=>monthKey(t.date)===mk);
  const income=tx.filter(t=>t.type==='Income').reduce((s,t)=>s+toBase(t.amount,t.currency),0);
  const expenses=tx.filter(t=>t.type==='Expense').reduce((s,t)=>s+toBase(t.amount,t.currency),0);
  const saves=tx.filter(t=>t.type==='Investment / Savings').reduce((s,t)=>s+toBase(t.amount,t.currency),0);
@@ -669,7 +699,7 @@ function renderDashboard(){
  const debt=state.debts.reduce((s,d)=>s+toBase(d.balance,d.currency),0)+cardDebt;
  setText('nwCash',money(cash,state.settings.baseCurrency)); setText('nwInvest',money(inv,state.settings.baseCurrency)); setText('nwDebt','− '+money(debt,state.settings.baseCurrency)); setText('nwTotal',money(cash+inv-debt,state.settings.baseCurrency));
 
- const recent=[...state.transactions].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6);
+ const recent=state.transactions.filter(t=>monthKey(t.date)===mk).sort((a,b)=>b.date.localeCompare(a.date)).slice(0,6);
  recentTransactions.innerHTML=recent.length?`<table><tbody>${recent.map(t=>`<tr><td>${escapeHtml(t.date)}</td><td><strong>${escapeHtml(t.description||t.category)}</strong><br><span class="small muted">${escapeHtml(t.type)} • ${escapeHtml(accountName(t.accountId))}</span></td><td style="text-align:right">${money(t.amount,t.currency)}</td></tr>`).join('')}</tbody></table>`:`<div class="empty">No transactions yet.</div>`;
 
  const upcoming=[...state.recurring].sort((a,b)=>a.due.localeCompare(b.due)).slice(0,7);
@@ -678,22 +708,28 @@ function renderDashboard(){
   return `<div class="split" style="padding:9px 0;border-bottom:1px solid var(--line)"><div><strong>${escapeHtml(r.name)}</strong><div class="small muted">${money(r.amount,r.currency)} • ${escapeHtml(r.due)}</div></div><span class="badge ${badge}">${txt}</span></div>`;
  }).join(''):`<div class="empty">No recurring bills added.</div>`;
 
- renderSpendingChart();
+ renderSpendingChart(mk);
+ renderMonthlyCategories(tx);
  renderGoalList('dashboardGoals',state.goals.slice(0,4),false);
 }
 function ratioUpdate(prefix,pct,target){
  const p=Math.max(0,pct); setText(prefix+'Pct',p.toFixed(1)+'%');
  document.getElementById(prefix+'Bar').style.width=Math.min(100,(p/target)*100)+'%';
 }
-function renderSpendingChart(){
- const labels=[]; const vals=[]; const now=new Date();
+function renderSpendingChart(selectedMonth){
+ const labels=[]; const vals=[]; const base=new Date((selectedMonth||monthKey(today()))+'-01T12:00:00');
  for(let i=5;i>=0;i--){
-  const d=new Date(now.getFullYear(),now.getMonth()-i,1), mk=d.toISOString().slice(0,7);
+  const d=new Date(base.getFullYear(),base.getMonth()-i,1), mk=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
   labels.push(d.toLocaleDateString(undefined,{month:'short'}));
   vals.push(state.transactions.filter(t=>monthKey(t.date)===mk&&t.type==='Expense').reduce((s,t)=>s+toBase(t.amount,t.currency),0));
  }
  const max=Math.max(...vals,1);
  spendingChart.innerHTML=vals.map((v,i)=>`<div class="bar-wrap"><div title="${money(v,state.settings.baseCurrency)}" class="bar" style="height:${Math.max(2,v/max*150)}px"></div><div class="bar-label">${labels[i]}</div></div>`).join('');
+}
+function renderMonthlyCategories(tx){
+ const totals={}; tx.filter(t=>t.type==='Expense').forEach(t=>totals[t.category||'Miscellaneous']=(totals[t.category||'Miscellaneous']||0)+toBase(t.amount,t.currency));
+ const rows=Object.entries(totals).sort((a,b)=>b[1]-a[1]).slice(0,8);
+ monthlyCategoryBreakdown.innerHTML=rows.length?`<table><tbody>${rows.map(([c,v])=>`<tr><td>${escapeHtml(c)}</td><td style="text-align:right"><strong>${money(v,state.settings.baseCurrency)}</strong></td></tr>`).join('')}</tbody></table>`:`<div class="empty">No expenses in this month.</div>`;
 }
 
 function renderTransactions(){
@@ -704,7 +740,7 @@ function renderAccounts(){
  accountsGrid.innerHTML=state.accounts.length?state.accounts.map(a=>`<div class="card span-4"><div class="split"><span class="badge">${escapeHtml(a.type)}</span><div class="row-actions"><button class="btn edit compact" onclick="editItem('accounts','${a.id}')">Edit</button><button class="btn danger compact" onclick="deleteItem('accounts','${a.id}')">Delete</button></div></div><h3 style="margin-top:14px">${escapeHtml(a.name)}</h3><div class="metric">${money(a.balance,a.currency)}</div><div class="small muted">${a.currency}</div></div>`).join(''):`<div class="card span-12 empty">Add checking, savings, credit card, brokerage, and other accounts separately.</div>`;
 }
 function renderBudget(){
- const mk=monthKey(today());
+ const mk=document.getElementById('dashboardMonthPicker')?.value||monthKey(today());
  budgetTable.innerHTML=state.budgets.length?`<table><thead><tr><th>Category</th><th>Bucket</th><th>Budget</th><th>Spent</th><th>Remaining</th><th>Progress</th><th></th></tr></thead><tbody>${state.budgets.map(b=>{
   const spent=state.transactions.filter(t=>monthKey(t.date)===mk&&t.type==='Expense'&&t.category===b.category).reduce((s,t)=>s+convertBetween(t.amount,t.currency,b.currency),0);
   const pct=b.amount?spent/b.amount*100:0;
@@ -739,80 +775,144 @@ function parseCSV(text){
   if(c==='"'&&q&&n==='"'){cell+='"';i++;continue}
   if(c==='"'){q=!q;continue}
   if(c===','&&!q){row.push(cell);cell='';continue}
-  if((c==='\n'||c==='\r')&&!q){
-   if(c==='\r'&&n==='\n')i++;
-   row.push(cell); if(row.some(x=>x.trim()!==''))rows.push(row); row=[];cell='';continue;
-  }
+  if((c==='\n'||c==='\r')&&!q){if(c==='\r'&&n==='\n')i++;row.push(cell);if(row.some(x=>x.trim()!==''))rows.push(row);row=[];cell='';continue}
   cell+=c;
  }
- if(cell.length||row.length){row.push(cell);rows.push(row)}
- return rows;
+ if(cell.length||row.length){row.push(cell);rows.push(row)} return rows;
 }
-async function importCSV(){
- const f=csvFile.files[0], accountId=importAccount.value; if(!f||!accountId)return alert('Choose a CSV file and account.');
- const rows=parseCSV(await f.text()); if(rows.length<2)return alert('No usable rows found.');
- const head=rows[0].map(h=>h.trim().toLowerCase());
- const idx=(names)=>head.findIndex(h=>names.some(n=>h===n||h.includes(n)));
- const di=idx(['date','transaction date','posted date']);
- const desc=idx(['description','merchant','memo','details','name']);
- const amt=idx(['amount','transaction amount']);
- const debit=idx(['debit','withdrawal','charge']);
- const credit=idx(['credit','deposit']);
- if(di<0||desc<0||(amt<0&&debit<0&&credit<0)){importStatus.textContent='Could not detect Date, Description, and Amount/Debit/Credit columns.';return}
- let count=0;
- for(const r of rows.slice(1)){
-  const d=new Date(r[di]); if(isNaN(d))continue;
-  let val=0,type='Expense';
-  if(amt>=0){val=Number(String(r[amt]).replace(/[$,()]/g,m=>m==='('?'-':'')); if(val<0){type='Expense';val=Math.abs(val)} else type='Income';}
-  else{
-   const dv=debit>=0?Number(String(r[debit]).replace(/[$,]/g,''))||0:0;
-   const cv=credit>=0?Number(String(r[credit]).replace(/[$,]/g,''))||0:0;
-   if(cv>0){val=cv;type='Income'}else{val=Math.abs(dv);type='Expense'}
-  }
-  if(!val)continue;
-  const description=(r[desc]||'Imported transaction').trim();
-  const category=guessCategory(description);
-  const bucket=guessBucket(category,type);
-  const tx={id:uid(),type,date:d.toISOString().slice(0,10),accountId,toAccountId:'',amount:val,currency:importCurrency.value,category,bucket,description};
-  state.transactions.push(tx); applyTransactionToBalances(tx); count++;
- }
- await saveAndRender(); importStatus.textContent=`Imported ${count} transactions. Review them in Transactions.`;
+function parseAmount(v){
+ if(v===undefined||v===null)return 0; let x=String(v).trim(); if(!x)return 0;
+ const neg=/^\(.*\)$/.test(x); x=x.replace(/[$,()\s]/g,''); const n=Number(x); return Number.isFinite(n)?(neg?-Math.abs(n):n):0;
 }
-function guessCategory(desc){
- const s=desc.toLowerCase();
+function normalizeDate(v){
+ const raw=String(v||'').trim(); if(!raw)return '';
+ let d=new Date(raw); if(!isNaN(d))return d.toISOString().slice(0,10);
+ const m=raw.match(/^(\d{1,2})[\/-](\d{1,2})(?:[\/-](\d{2,4}))?$/); if(!m)return '';
+ let y=m[3]?Number(m[3]):new Date().getFullYear(); if(y<100)y+=2000;
+ d=new Date(y,Number(m[1])-1,Number(m[2])); return isNaN(d)?'':d.toISOString().slice(0,10);
+}
+function canonicalMerchant(desc){
+ let s=String(desc||'').toUpperCase().replace(/\b(POS|DEBIT|CREDIT|PURCHASE|ACH|ONLINE|CHECKCARD|CARD|PENDING)\b/g,' ').replace(/[#*]\w+/g,' ').replace(/\d{4,}/g,' ').replace(/\s+/g,' ').trim();
+ const maps=[['AMAZON',['AMZN','AMAZON']],['WALMART',['WAL-MART','WALMART','WM SUPERCENTER']],['COSTCO',['COSTCO']],['NETFLIX',['NETFLIX']],['SPOTIFY',['SPOTIFY']],['CHATGPT',['CHATGPT','OPENAI']],['APPLE',['APPLE.COM/BILL','APPLE BILL']],['NV ENERGY',['NV ENERGY']],['VERIZON',['VERIZON']],['T-MOBILE',['T-MOBILE','TMOBILE']],['Fidelity',['FIDELITY']],['STARBUCKS',['STARBUCKS']]];
+ for(const [name,keys] of maps)if(keys.some(k=>s.includes(k)))return name;
+ return s.slice(0,45)||'UNKNOWN';
+}
+function learnedRule(desc){const m=canonicalMerchant(desc);return state.rules.find(r=>r.merchant===m)||null}
+function classifyCandidate(c){
+ const s=c.description.toLowerCase(), learned=learnedRule(c.description);
+ if(learned)return {...c,type:learned.type,category:learned.category,bucket:learned.bucket,confidence:99,reason:'Learned rule'};
+ const out=(type,category,bucket,confidence,reason)=>({...c,type,category,bucket,confidence,reason});
+ if(/payment thank you|card payment|credit card payment|autopay payment|payment received/.test(s))return out('Transfer','Transfer','Excluded',96,'Card payment/transfer');
+ if(/fidelity|vanguard|schwab|brokerage|investment|sip\b|mutual fund/.test(s)&&c.direction==='outflow')return out('Investment / Savings','Investment','Savings',92,'Investment transfer');
+ if(/payroll|salary|paycheck/.test(s)&&c.direction==='inflow')return out('Income','Salary','Excluded',98,'Salary keyword');
+ if(c.direction==='inflow')return out('Income','Miscellaneous','Excluded',72,'Money in');
  const rules=[
-  ['Groceries',['walmart','costco','whole foods','trader joe','grocery','safeway']],
-  ['Restaurants',['restaurant','doordash','ubereats','grubhub','chipotle','starbucks']],
-  ['Gas',['shell','chevron','exxon','gas station','fuel']],
-  ['Travel',['airlines','airbnb','hotel','booking.com','expedia']],
-  ['Subscriptions',['netflix','spotify','hulu','youtube','subscription']],
-  ['Utilities',['electric','energy','water','utility']],
-  ['Phone',['verizon','att','t-mobile']],
-  ['Pet/Cookie',['petco','petsmart','veterinary','vet']],
-  ['Salary',['payroll','salary','direct deposit']]
+ ['Subscriptions','Wants',96,/netflix|spotify|hulu|disney\+|disney plus|youtube premium|icloud|apple\.com\/bill|chatgpt|openai|adobe|microsoft 365|paramount|peacock/,'Subscription'],
+ ['Groceries','Needs',91,/costco|walmart|wal-mart|whole foods|trader joe|safeway|grocery|kroger|aldi/,'Groceries'],
+ ['Restaurants','Wants',88,/restaurant|doordash|ubereats|grubhub|chipotle|starbucks|mcdonald|taco bell|chick-fil|cafe|pizza/,'Dining'],
+ ['Gas','Needs',90,/shell|chevron|exxon|circle k|76 station|fuel|gas station/,'Fuel'],
+ ['Utilities','Needs',91,/electric|energy|water|utility|gas company|nv energy/,'Utility'],
+ ['Phone','Needs',90,/verizon|t-mobile|tmobile|at&t|wireless/,'Phone'],
+ ['Internet','Needs',90,/cox|xfinity|comcast|internet/,'Internet'],
+ ['Pet/Cookie','Wants',88,/petco|petsmart|veterinary|animal hospital|\bvet\b/,'Pet'],
+ ['Travel','Wants',86,/airbnb|hotel|booking\.com|expedia|airlines|southwest|united airlines|delta air|american airlines/,'Travel'],
+ ['Shopping','Wants',78,/amazon|amzn|target|best buy|macys|nike|outlet/,'Shopping']
  ];
- for(const [cat,keys] of rules)if(keys.some(k=>s.includes(k)))return cat;
- return 'Miscellaneous';
+ for(const [category,bucket,confidence,re,reason] of rules)if(re.test(s))return out('Expense',category,bucket,confidence,reason);
+ return out('Expense','Miscellaneous','Wants',45,'Needs review');
 }
-function guessBucket(cat,type){
- if(type==='Income')return 'Excluded';
- if(['Rent/Mortgage','Utilities','Groceries','Gas','Car Payment','Car Insurance','Medical','Loans','Phone','Internet','Insurance'].includes(cat))return 'Needs';
- if(['Savings','Investment'].includes(cat))return 'Savings';
- return 'Wants';
+function fingerprint(t){const dir=t.direction||(t.type==='Income'?'inflow':(t.type==='Transfer'?'': 'outflow'));return [t.accountId,t.date,Number(t.amount).toFixed(2),canonicalMerchant(t.description),dir].join('|')}
+function markPatterns(candidates){
+ const all=[...state.transactions.map(t=>({date:t.date,amount:t.amount,merchant:canonicalMerchant(t.description),type:t.type,direction:t.direction||((t.type==='Income')?'inflow':'outflow')})),...candidates.map(c=>({date:c.date,amount:c.amount,merchant:c.merchant,type:c.type,direction:c.direction}))];
+ for(const c of candidates){
+  const same=all.filter(x=>x.merchant===c.merchant&&x.direction===c.direction).sort((a,b)=>a.date.localeCompare(b.date));
+  if(same.length<3)continue;
+  const gaps=[]; for(let i=1;i<same.length;i++){const a=new Date(same[i-1].date),b=new Date(same[i].date);gaps.push(Math.round((b-a)/86400000))}
+  gaps.sort((a,b)=>a-b); const med=gaps[Math.floor(gaps.length/2)]||0;
+  if(med>=25&&med<=35)c.recurring='Monthly'; else if(med>=12&&med<=17)c.recurring='Biweekly'; else if(med>=6&&med<=8)c.recurring='Weekly';
+  if(c.recurring&&c.type==='Income'&&c.category==='Salary')c.patternLabel='Recurring salary';
+  else if(c.recurring&&c.category==='Subscriptions')c.patternLabel='Subscription';
+  else if(c.recurring)c.patternLabel='Recurring '+c.type.toLowerCase();
+ }
+ return candidates;
 }
-
-function exportBackup(){
- const blob=new Blob([JSON.stringify({version:1,exportedAt:new Date().toISOString(),data:state},null,2)],{type:'application/json'});
- const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='family-finance-backup-'+today()+'.json';a.click();URL.revokeObjectURL(a.href);
+function rowsToCandidates(rows,accountId,currency){
+ if(rows.length<2)throw new Error('No usable rows found.');
+ const head=rows[0].map(h=>String(h).trim().toLowerCase()); const idx=names=>head.findIndex(h=>names.some(n=>h===n||h.includes(n)));
+ const di=idx(['transaction date','posted date','date']); const desc=idx(['description','merchant','memo','details','name']); const amt=idx(['transaction amount','amount']); const debit=idx(['debit','withdrawal','charge']); const credit=idx(['credit','deposit']);
+ if(di<0||desc<0||(amt<0&&debit<0&&credit<0))throw new Error('Could not detect Date, Description, and Amount/Debit/Credit columns.');
+ const sign=document.getElementById('importSign').value; const out=[];
+ for(const r of rows.slice(1)){
+  const date=normalizeDate(r[di]); if(!date)continue; let amount=0,direction='outflow';
+  if(debit>=0||credit>=0){const dv=debit>=0?Math.abs(parseAmount(r[debit])):0,cv=credit>=0?Math.abs(parseAmount(r[credit])):0;if(cv>0){amount=cv;direction='inflow'}else if(dv>0){amount=dv;direction='outflow'}}
+  else{const raw=parseAmount(r[amt]); if(!raw)continue; amount=Math.abs(raw); if(sign==='positiveOut')direction=raw>=0?'outflow':'inflow'; else direction=raw>=0?'inflow':'outflow'}
+  if(!amount)continue; const description=String(r[desc]||'Imported transaction').trim(); let c={id:uid(),date,description,merchant:canonicalMerchant(description),amount,currency,accountId,direction,selected:true,source:importSourceName}; c=classifyCandidate(c); out.push(c);
+ }
+ return markPatterns(out);
 }
-async function restoreBackup(ev){
- const f=ev.target.files[0];if(!f)return;
+async function extractPdfLines(file){
+ const pdfjs=await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.mjs');
+ pdfjs.GlobalWorkerOptions.workerSrc='https://cdn.jsdelivr.net/npm/pdfjs-dist@6.1.200/build/pdf.worker.mjs';
+ const pdf=await pdfjs.getDocument({data:new Uint8Array(await file.arrayBuffer())}).promise; const lines=[];
+ for(let p=1;p<=pdf.numPages;p++){
+  const page=await pdf.getPage(p), content=await page.getTextContent(); const groups=new Map();
+  for(const item of content.items){const y=Math.round(item.transform?.[5]||0); if(!groups.has(y))groups.set(y,[]);groups.get(y).push({x:item.transform?.[4]||0,s:item.str||''})}
+  [...groups.entries()].sort((a,b)=>b[0]-a[0]).forEach(([,items])=>lines.push(items.sort((a,b)=>a.x-b.x).map(i=>i.s).join(' ').replace(/\s+/g,' ').trim()));
+ }
+ return lines.filter(Boolean);
+}
+function pdfLinesToCandidates(lines,accountId,currency){
+ const out=[]; const sign=document.getElementById('importSign').value; const year=new Date().getFullYear();
+ for(const line of lines){
+  const dm=line.match(/^(\d{1,2}[\/-]\d{1,2}(?:[\/-]\d{2,4})?)\s+(.+)$/); if(!dm)continue;
+  const date=normalizeDate(dm[1].split(/[\/-]/).length===2?dm[1]+'/'+year:dm[1]); if(!date)continue;
+  const body=dm[2]; const amts=[...body.matchAll(/\(?-?\$?[\d,]+\.\d{2}\)?/g)]; if(!amts.length)continue;
+  const token=amts.length>=2?amts[amts.length-2][0]:amts[amts.length-1][0]; let raw=parseAmount(token); if(!raw)continue;
+  const description=body.slice(0,body.lastIndexOf(token)).trim(); if(description.length<2)continue; let direction;
+  if(sign==='positiveOut')direction=raw>=0?'outflow':'inflow'; else direction=raw>=0?'inflow':'outflow';
+  let c={id:uid(),date,description,merchant:canonicalMerchant(description),amount:Math.abs(raw),currency,accountId,direction,selected:true,source:importSourceName,pdfHeuristic:true}; c=classifyCandidate(c); c.confidence=Math.min(c.confidence,65); c.reason+=' • PDF heuristic'; out.push(c);
+ }
+ return markPatterns(out);
+}
+async function analyzeStatement(){
+ const f=statementFile.files[0],accountId=importAccount.value; if(!f||!accountId)return alert('Choose a statement file and account.');
+ importSourceName=f.name; importStatus.textContent='Analyzing locally…'; importReviewCard.style.display='none';
  try{
-  const parsed=JSON.parse(await f.text());
-  if(!parsed.data)throw new Error();
-  if(!confirm('Replace current data with this backup?'))return;
-  state=parsed.data;await saveAndRender();alert('Backup restored.');
- }catch(e){alert('Invalid backup file.')}
+  if(f.name.toLowerCase().endsWith('.csv'))importCandidates=rowsToCandidates(parseCSV(await f.text()),accountId,importCurrency.value);
+  else if(f.name.toLowerCase().endsWith('.pdf')){const lines=await extractPdfLines(f);importCandidates=pdfLinesToCandidates(lines,accountId,importCurrency.value);if(!importCandidates.length)throw new Error('Text was extracted, but transaction rows could not be identified. Download CSV from the bank for reliable import.');}
+  else throw new Error('Use a CSV or PDF file.');
+  const existing=new Set(state.transactions.map(fingerprint)); importCandidates.forEach(c=>{c.duplicate=existing.has(fingerprint(c));if(c.duplicate)c.selected=false});
+  renderImportReview(); importStatus.textContent=`Detected ${importCandidates.length} possible transactions. Nothing has been added yet.`;
+ }catch(e){console.error(e);importStatus.textContent='Could not analyze this statement: '+e.message}
+}
+function optionHtml(values,current){return values.map(v=>`<option ${v===current?'selected':''}>${escapeHtml(v)}</option>`).join('')}
+function renderImportReview(){
+ const high=importCandidates.filter(c=>c.confidence>=85&&!c.duplicate).length,low=importCandidates.filter(c=>c.confidence<60&&!c.duplicate).length,dups=importCandidates.filter(c=>c.duplicate).length;
+ importSummary.textContent=`${importCandidates.length} detected • ${high} high confidence • ${low} need review • ${dups} possible duplicates skipped`;
+ importReviewTable.innerHTML=`<table><thead><tr><th>Use</th><th>Date</th><th>Description</th><th>Detected</th><th>Type</th><th>Category</th><th>50/30/20</th><th>Amount</th></tr></thead><tbody>${importCandidates.map((c,i)=>`<tr><td><input id="impUse${i}" type="checkbox" ${c.selected?'checked':''} ${c.duplicate?'disabled':''}></td><td>${escapeHtml(c.date)}</td><td><strong>${escapeHtml(c.merchant)}</strong><br><span class="small muted">${escapeHtml(c.description)}</span></td><td><span class="badge ${c.duplicate?'bad':c.confidence>=85?'good':c.confidence<60?'warn':''}">${c.duplicate?'Duplicate':c.confidence+'%'}</span><br><span class="small muted">${escapeHtml(c.patternLabel||c.reason||'')}</span></td><td><select id="impType${i}">${optionHtml(['Expense','Income','Investment / Savings','Transfer'],c.type)}</select></td><td><select id="impCat${i}">${optionHtml(state.categories,c.category)}</select></td><td><select id="impBucket${i}">${optionHtml(['Needs','Wants','Savings','Excluded'],c.bucket)}</select></td><td style="white-space:nowrap">${money(c.amount,c.currency)}</td></tr>`).join('')}</tbody></table>`;
+ importReviewCard.style.display='block';
+}
+function nextRecurringDate(date,frequency){const d=new Date(date+'T12:00:00');if(frequency==='Weekly')d.setDate(d.getDate()+7);else if(frequency==='Biweekly')d.setDate(d.getDate()+14);else d.setMonth(d.getMonth()+1);return d.toISOString().slice(0,10)}
+async function approveImport(){
+ if(!importCandidates.length)return; const adjust=importAdjustBalance.value==='yes'; let count=0,skipped=0; const existing=new Set(state.transactions.map(fingerprint));
+ for(let i=0;i<importCandidates.length;i++){
+  const c=importCandidates[i],use=document.getElementById('impUse'+i); if(!use||!use.checked||c.duplicate){skipped++;continue}
+  const type=document.getElementById('impType'+i).value,category=document.getElementById('impCat'+i).value,bucket=document.getElementById('impBucket'+i).value;
+  const tx={id:uid(),type,date:c.date,accountId:c.accountId,toAccountId:'',amount:c.amount,currency:c.currency,category,bucket,description:c.description,direction:c.direction,affectsBalance:adjust,imported:true,source:c.source,merchant:c.merchant,confidence:c.confidence};
+  if(existing.has(fingerprint(tx))){skipped++;continue} existing.add(fingerprint(tx)); state.transactions.push(tx); applyTransactionToBalances(tx); count++;
+  const rule={merchant:c.merchant,type,category,bucket}; const ri=state.rules.findIndex(r=>r.merchant===c.merchant); if(ri>=0)state.rules[ri]=rule; else state.rules.push(rule);
+  if(c.recurring&&!state.recurring.some(r=>canonicalMerchant(r.name)===c.merchant))state.recurring.push({id:uid(),name:c.merchant,type,amount:c.amount,currency:c.currency,accountId:c.accountId,category,frequency:c.recurring,due:nextRecurringDate(c.date,c.recurring)});
+ }
+ state.importHistory.push({id:uid(),file:importSourceName,importedAt:new Date().toISOString(),count}); await saveAndRender(); importReviewCard.style.display='none'; importCandidates=[]; statementFile.value=''; importStatus.textContent=`Imported ${count} transactions${skipped?`; skipped ${skipped}`:''}. Dashboard updated.`;
+}
+async function exportBackup(){
+ const payload=await idbGet(DB_KEY),meta=JSON.parse(localStorage.getItem(STORAGE_META)||'null'); if(!payload||!meta)return alert('No encrypted vault to back up yet.');
+ const blob=new Blob([JSON.stringify({format:'family-finance-encrypted-backup-v1',exportedAt:new Date().toISOString(),meta,payload},null,2)],{type:'application/json'});
+ const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='FamilyFinance_'+today()+'.ffbackup.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+async function restoreEncryptedBackup(ev){
+ const f=ev.target.files?.[0]; if(!f)return;
+ try{const parsed=JSON.parse(await f.text());if(parsed.format!=='family-finance-encrypted-backup-v1'||!parsed.meta?.salt||!parsed.payload?.ct)throw new Error('Invalid encrypted backup.');if(!confirm('Replace the local Family Finance vault with this encrypted backup?'))return;localStorage.setItem(STORAGE_META,JSON.stringify(parsed.meta));await idbSet(DB_KEY,parsed.payload);alert('Encrypted backup restored. Reloading the app.');location.reload()}catch(e){alert(e.message||'Invalid backup file.')}
 }
 
 document.getElementById('pinInput').addEventListener('keydown',e=>{if(e.key==='Enter')handleUnlock()});
@@ -823,9 +923,6 @@ document.getElementById('pinInput').addEventListener('keydown',e=>{if(e.key==='E
  document.getElementById('confirmWrap').classList.toggle('hidden',exists);
 })();
 </script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="config.js"></script>
-<script src="drive-sync.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => navigator.serviceWorker.register('./sw.js').catch(console.error));

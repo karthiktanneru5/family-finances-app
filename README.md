@@ -1,51 +1,40 @@
-# Family Finance PWA — Final Build
+# Family Finance — Phase 1
 
-A private Progressive Web App for household income, expenses, budgets, investments, debts, goals, recurring bills, and bank-statement imports.
+Local-first personal finance PWA for phone and laptop.
 
-## Final-build capabilities
+## Phase 1 features
 
-- Responsive, installable PWA for phone and laptop.
-- Add, edit, and delete transactions, accounts, budgets, investments, debts, goals, and recurring items.
-- Transaction edits safely reverse the previous account-balance effect before applying the updated values.
-- Account deletion is blocked while the account is referenced by transactions, investments, or recurring items.
-- Financial payload is encrypted in-browser using AES-GCM.
-- Optional Google Drive synchronization uploads the encrypted vault envelope only.
-- Google OAuth uses the narrow `https://www.googleapis.com/auth/drive.file` scope.
-- The application shell works offline after it is cached.
+- Encrypted AES-GCM vault stored in browser IndexedDB
+- No Google Drive connection required
+- Manual transactions, accounts, budgets, investments, debts, goals, and recurring items
+- Edit/delete support across major records
+- Monthly dashboard selector with income, expenses, savings, cash flow, 50/30/20, spending trend, spending by category, net worth, goals, and reminders
+- CSV bank-statement analysis with automatic column detection
+- Text-based PDF bank-statement analysis using pinned PDF.js 6.1.200 loaded in the browser
+- Merchant normalization and rule learning
+- Salary, subscription, investment-transfer, recurring transaction, and card-payment detection
+- Duplicate detection
+- Review-before-import workflow
+- Encrypted backup export and restore
 
-## Update an existing GitHub Pages deployment
+## Statement guidance
 
-Replace the old repository files with the files in this folder and commit the changes. The service-worker cache identifier has been updated so installed phones and laptops can receive the new build. After deployment, close and reopen the PWA. If an older screen remains, refresh the site once in the browser.
+CSV is strongly recommended because bank PDFs vary significantly in layout. PDF import is best-effort for text-based PDFs. Image-only/scanned PDFs are not supported in this build.
 
-## Before Google Drive sync will work
+PDF parsing uses Mozilla PDF.js 6.1.200 from jsDelivr. The PDF bytes are passed to PDF.js in the browser; this app does not upload statements to an application server.
 
-1. Create a Google Cloud project.
-2. Enable **Google Drive API**.
-3. Configure the OAuth consent screen.
-4. Create an **OAuth 2.0 Client ID → Web application**.
-5. Add the exact HTTPS web-app origin as an Authorized JavaScript origin. For local testing, you can also add `http://localhost:8080`.
-6. Open `config.js` and replace the placeholder with the OAuth Web Client ID.
+## Important balance behavior
 
-No OAuth client secret belongs in this front-end project.
+During statement import, the default is **Do not change account balance**. This is intentional: if the account balance you entered is a current balance, applying six months of historical transactions would distort it. Choose the adjustment option only when the account opening balance corresponds to the beginning of the imported statement period.
 
-## Local test
+## Publishing to GitHub Pages
 
-Do not double-click `index.html` for Drive/PWA testing. Serve the folder over HTTP:
+Upload these files to the root of the existing `family-finance-app` repository and replace the old versions:
 
-```bash
-python3 -m http.server 8080
-```
+- `index.html`
+- `manifest.webmanifest`
+- `sw.js`
+- `README.md`
+- `icons/`
 
-Then open `http://localhost:8080`.
-
-## Deployment
-
-Deploy these static files to an HTTPS host such as GitHub Pages. The host serves application code only; finance data remains locally encrypted, and the optional synchronized vault is stored in Google Drive.
-
-## Spouse sharing
-
-The owner can share the encrypted Drive vault from Settings. Both users need the shared Family Finance access code to decrypt the vault.
-
-## Data-safety note
-
-Test the final build with sample data before importing real statements. Keep an exported backup in a private location. If the access code is lost, the encrypted data cannot be recovered.
+`config.js` and `drive-sync.js` are no longer required in Phase 1.

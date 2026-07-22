@@ -6,7 +6,7 @@
   "display": "standalone",
   "background_color": "#f4f7fb",
   "theme_color": "#10182b",
-  "description": "Private household expense, income, investment, debt and budget tracker.",
+  "description": "Private local-first household finance tracker with statement analysis and monthly dashboards.",
   "icons": [
     {
       "src": "icons/icon-192.png",
