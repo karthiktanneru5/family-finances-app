@@ -1,6 +1,6 @@
 {
-  "name": "Family Finance",
-  "short_name": "Finance",
+  "name": "Family Finance V2",
+  "short_name": "Family Finance",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",

@@ -91,7 +91,7 @@ input:focus,select:focus{outline:2px solid #dbe3ff;border-color:#9eb1ff}
     <h2 id="lockTitle">Create your family access code</h2>
     <p class="muted" id="lockText">Create a code that only you and your wife know. Your finance data will be encrypted before it is stored in this browser.</p>
     <label>Access code</label>
-    <input id="pinInput" type="password" autocomplete="current-password" placeholder="Use at least 6 characters" />
+    <input id="pinInput" type="password" autocomplete="current-password" placeholder="Use at least 8 characters" />
     <div id="confirmWrap">
       <label style="margin-top:12px">Confirm access code</label>
       <input id="pinConfirm" type="password" autocomplete="new-password" placeholder="Re-enter access code" />
@@ -108,18 +108,20 @@ input:focus,select:focus{outline:2px solid #dbe3ff;border-color:#9eb1ff}
 <div id="appRoot" class="app hidden">
   <aside class="sidebar">
     <div class="brand">Family Finance
-      <small>Private • Local-first • Encrypted</small>
+      <small>V2 • Private • Local-first • Encrypted</small>
     </div>
     <div class="nav">
       <button class="active" data-section="dashboard">Dashboard</button>
-      <button data-section="transactions">Transactions</button>
       <button data-section="accounts">Accounts</button>
-      <button data-section="budget">Budget</button>
+      <button data-section="transactions">Transactions</button>
+      <button data-section="import">Review & Import</button>
+      <button data-section="recurring">Recurring</button>
+      <button data-section="budget">Plan</button>
+      <button data-section="reports">Reports</button>
       <button data-section="investments">Investments</button>
       <button data-section="debts">Debts</button>
       <button data-section="goals">Goals</button>
-      <button data-section="recurring">Recurring & Bills</button>
-      <button data-section="import">Import Statements</button>
+      <button data-section="rules">Rules</button>
       <button data-section="settings">Settings</button>
     </div>
     <div class="sidebar-footer">
@@ -201,7 +203,7 @@ input:focus,select:focus{outline:2px solid #dbe3ff;border-color:#9eb1ff}
     </section>
 
     <section id="budget" class="section">
-      <div class="topbar"><div><h1>Budget</h1><div class="sub">Monthly category limits with 50/30/20 classification.</div></div><button class="btn" onclick="openCreateModal('budgets')">+ Budget</button></div>
+      <div class="topbar"><div><h1>Plan</h1><div class="sub">50/30/20 and monthly category budgeting.</div></div><button class="btn" onclick="openCreateModal('budgets')">+ Budget</button></div>
       <div class="card"><div id="budgetTable"></div></div>
     </section>
 
@@ -230,8 +232,23 @@ input:focus,select:focus{outline:2px solid #dbe3ff;border-color:#9eb1ff}
       <div class="card"><div id="recurringTable"></div></div>
     </section>
 
+    <section id="reports" class="section">
+      <div class="topbar"><div><h1>Reports</h1><div class="sub">Cash flow, merchants, categories, and 50/30/20 history.</div></div><input id="reportMonthPicker" type="month" style="width:auto" onchange="renderReports()" /></div>
+      <div class="grid">
+        <div class="card span-6"><h3>Cash Flow</h3><div id="reportCashFlow"></div></div>
+        <div class="card span-6"><h3>Top Merchants</h3><div id="reportMerchants"></div></div>
+        <div class="card span-6"><h3>Spending by Category</h3><div id="reportCategories"></div></div>
+        <div class="card span-6"><h3>50 / 30 / 20 History</h3><div id="reportRatioHistory"></div></div>
+      </div>
+    </section>
+
+    <section id="rules" class="section">
+      <div class="topbar"><div><h1>Rules</h1><div class="sub">The app learns merchant classifications when you approve imported transactions.</div></div></div>
+      <div class="card"><div class="notice">Rules are created automatically from your approved imports. You can edit or delete them here.</div><div id="rulesTable"></div></div>
+    </section>
+
     <section id="import" class="section">
-      <div class="topbar"><div><h1>Import Statements</h1><div class="sub">Analyze CSV or text-based PDF bank statements locally before anything is added.</div></div></div>
+      <div class="topbar"><div><h1>Review & Import</h1><div class="sub">Upload statements, review detected transactions, then approve them.</div></div></div>
       <div class="card">
         <div class="notice"><strong>Recommended:</strong> CSV gives the most accurate results. Text-based PDFs are supported on a best-effort basis. Scanned/image-only PDFs cannot be reliably read in this version.</div>
         <div class="file-box">
@@ -455,7 +472,7 @@ async function handleUnlock(){
  try{
   if(!meta){
    const confirm=document.getElementById('pinConfirm').value;
-   if(pin.length<6){err.textContent='Use at least 6 characters.';return}
+   if(pin.length<8){err.textContent='Use at least 8 characters.';return}
    if(pin!==confirm){err.textContent='Codes do not match.';return}
    const salt=crypto.getRandomValues(new Uint8Array(16));
    cryptoKey=await deriveKey(pin,salt);
@@ -492,6 +509,7 @@ function resetInactivity(){
 function initUI(){
  document.getElementById('txDate').value=today();
  document.getElementById('dashboardMonthPicker').value=monthKey(today());
+ document.getElementById('reportMonthPicker').value=monthKey(today());
  document.getElementById('baseCurrency').value=state.settings.baseCurrency||'USD';
  document.getElementById('usdInr').value=state.settings.usdInr||83;
  populateSelects(); renderAll();
@@ -673,7 +691,7 @@ async function saveSettings(){
 }
 
 function renderAll(){
- renderDashboard(); renderTransactions(); renderAccounts(); renderBudget(); renderInvestments(); renderDebts(); renderGoals(); renderRecurring();
+ renderDashboard(); renderTransactions(); renderAccounts(); renderBudget(); renderInvestments(); renderDebts(); renderGoals(); renderRecurring(); renderReports(); renderRules();
 }
 
 function renderDashboard(){
@@ -767,6 +785,30 @@ function renderRecurring(){
 }
 function accountName(id){return state.accounts.find(a=>a.id===id)?.name||'—'}
 function setText(id,v){const e=document.getElementById(id);if(e)e.textContent=v}
+
+
+function renderRules(){
+ const el=document.getElementById('rulesTable'); if(!el)return;
+ if(!state.rules.length){el.innerHTML='<div class="empty">No learned rules yet. Approve statement imports and rules will appear here.</div>';return}
+ el.innerHTML=`<table><thead><tr><th>Merchant</th><th>Type</th><th>Category</th><th>50/30/20</th><th></th></tr></thead><tbody>${state.rules.map((r,i)=>`<tr><td><strong>${escapeHtml(r.merchant)}</strong></td><td><select onchange="updateRule(${i},'type',this.value)">${optionHtml(['Expense','Income','Investment / Savings','Transfer'],r.type||'Expense')}</select></td><td><select onchange="updateRule(${i},'category',this.value)">${optionHtml(state.categories,r.category||'Miscellaneous')}</select></td><td><select onchange="updateRule(${i},'bucket',this.value)">${optionHtml(['Needs','Wants','Savings','Excluded'],r.bucket||'Wants')}</select></td><td><button class="btn danger compact" onclick="deleteRule(${i})">Delete</button></td></tr>`).join('')}</tbody></table>`;
+}
+async function updateRule(i,k,v){if(!state.rules[i])return;state.rules[i][k]=v;await encryptState();renderRules()}
+async function deleteRule(i){if(!confirm('Delete this learned rule?'))return;state.rules.splice(i,1);await saveAndRender()}
+function renderReports(){
+ const pick=document.getElementById('reportMonthPicker'); if(!pick||!state)return;
+ const m=pick.value||monthKey(today()),tx=state.transactions.filter(t=>monthKey(t.date)===m);
+ const income=tx.filter(t=>t.type==='Income').reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+ const spending=tx.filter(t=>t.type==='Expense').reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+ const saving=tx.filter(t=>t.type==='Investment / Savings').reduce((s,t)=>s+toBase(t.amount,t.currency),0);
+ reportCashFlow.innerHTML=`<div class="split"><span>Income</span><strong class="good">${money(income,state.settings.baseCurrency)}</strong></div><br><div class="split"><span>Spending</span><strong class="bad">${money(spending,state.settings.baseCurrency)}</strong></div><br><div class="split"><span>Saved / Invested</span><strong>${money(saving,state.settings.baseCurrency)}</strong></div><hr style="border:0;border-top:1px solid var(--line);margin:14px 0"><div class="split"><strong>Net Cash Flow</strong><strong>${money(income-spending-saving,state.settings.baseCurrency)}</strong></div>`;
+ const merch={};tx.filter(t=>t.type==='Expense').forEach(t=>{const k=t.description||t.category;merch[k]=(merch[k]||0)+toBase(t.amount,t.currency)});
+ reportMerchants.innerHTML=Object.entries(merch).sort((a,b)=>b[1]-a[1]).slice(0,8).map(([k,v])=>`<div class="split" style="padding:8px 0;border-bottom:1px solid var(--line)"><span>${escapeHtml(k)}</span><strong>${money(v,state.settings.baseCurrency)}</strong></div>`).join('')||'<div class="empty">No spending data.</div>';
+ const cat={};tx.filter(t=>t.type==='Expense').forEach(t=>cat[t.category]=(cat[t.category]||0)+toBase(t.amount,t.currency));
+ reportCategories.innerHTML=Object.entries(cat).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div class="split" style="padding:8px 0;border-bottom:1px solid var(--line)"><span>${escapeHtml(k)}</span><strong>${money(v,state.settings.baseCurrency)}</strong></div>`).join('')||'<div class="empty">No spending data.</div>';
+ const base=new Date(m+'-01T12:00:00'),rows=[];
+ for(let i=5;i>=0;i--){const d=new Date(base.getFullYear(),base.getMonth()-i,1),mm=d.toISOString().slice(0,7),a=state.transactions.filter(t=>monthKey(t.date)===mm),inc=a.filter(t=>t.type==='Income').reduce((s,t)=>s+toBase(t.amount,t.currency),0);const pct=b=>inc?a.filter(t=>t.bucket===b).reduce((s,t)=>s+toBase(t.amount,t.currency),0)/inc*100:0;rows.push([d.toLocaleDateString(undefined,{month:'short'}),pct('Needs'),pct('Wants'),pct('Savings')])}
+ reportRatioHistory.innerHTML=`<table><thead><tr><th>Month</th><th>Needs</th><th>Wants</th><th>Savings</th></tr></thead><tbody>${rows.map(r=>`<tr><td>${r[0]}</td><td>${r[1].toFixed(1)}%</td><td>${r[2].toFixed(1)}%</td><td>${r[3].toFixed(1)}%</td></tr>`).join('')}</tbody></table>`;
+}
 
 function parseCSV(text){
  const rows=[]; let row=[],cell='',q=false;

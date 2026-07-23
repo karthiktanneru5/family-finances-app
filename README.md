@@ -1,40 +1,39 @@
-# Family Finance — Phase 1
+# Family Finance V2 — Ready to Use
 
-Local-first personal finance PWA for phone and laptop.
+This is the local-first V2 release.
 
-## Phase 1 features
-
-- Encrypted AES-GCM vault stored in browser IndexedDB
-- No Google Drive connection required
-- Manual transactions, accounts, budgets, investments, debts, goals, and recurring items
-- Edit/delete support across major records
-- Monthly dashboard selector with income, expenses, savings, cash flow, 50/30/20, spending trend, spending by category, net worth, goals, and reminders
-- CSV bank-statement analysis with automatic column detection
-- Text-based PDF bank-statement analysis using pinned PDF.js 6.1.200 loaded in the browser
-- Merchant normalization and rule learning
-- Salary, subscription, investment-transfer, recurring transaction, and card-payment detection
+## Included
+- Responsive phone/laptop PWA
+- Encrypted IndexedDB storage
+- Accounts, transactions, investments, debts, goals, budgets and recurring bills
+- Edit/delete throughout
+- Monthly dashboard and 50/30/20 tracking
+- CSV statement analysis and review-before-approve workflow
+- Best-effort text-based PDF import
+- Automatic salary/subscription/recurring/transfer/category detection
 - Duplicate detection
-- Review-before-import workflow
-- Encrypted backup export and restore
+- Learned merchant rules with a Rules screen
+- Reports: cash flow, top merchants, categories, and 50/30/20 history
+- USD and INR
+- Encrypted backup/restore
+- No Google Drive or bank credentials required
 
-## Statement guidance
+## Publish to your existing GitHub Pages app
+1. Extract this ZIP.
+2. Upload `index.html`, `manifest.webmanifest`, `sw.js`, `README.md`, and the `icons` folder to the root of your existing `family-finance-app` repository.
+3. Replace the old files when GitHub asks.
+4. Delete old `config.js` and `drive-sync.js` if they still exist.
+5. Commit directly to `main`.
+6. Open **Actions** and wait for the Pages deployment to show a green check.
+7. Open the live site and hard refresh (`Cmd+Shift+R` on Mac, `Ctrl+Shift+R` on Windows).
 
-CSV is strongly recommended because bank PDFs vary significantly in layout. PDF import is best-effort for text-based PDFs. Image-only/scanned PDFs are not supported in this build.
+## First real-use workflow
+1. Create your access code.
+2. Add all accounts with current balances.
+3. Import ONE CSV statement first.
+4. Review transaction count, totals and classifications before approval.
+5. Approve it and compare the dashboard with the statement.
+6. Export an encrypted backup.
+7. Then import the remaining statements.
 
-PDF parsing uses Mozilla PDF.js 6.1.200 from jsDelivr. The PDF bytes are passed to PDF.js in the browser; this app does not upload statements to an application server.
-
-## Important balance behavior
-
-During statement import, the default is **Do not change account balance**. This is intentional: if the account balance you entered is a current balance, applying six months of historical transactions would distort it. Choose the adjustment option only when the account opening balance corresponds to the beginning of the imported statement period.
-
-## Publishing to GitHub Pages
-
-Upload these files to the root of the existing `family-finance-app` repository and replace the old versions:
-
-- `index.html`
-- `manifest.webmanifest`
-- `sw.js`
-- `README.md`
-- `icons/`
-
-`config.js` and `drive-sync.js` are no longer required in Phase 1.
+CSV is strongly preferred. Text-based PDFs are best-effort; scanned/image PDFs are not reliably supported.
